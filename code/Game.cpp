@@ -7,12 +7,20 @@ const int Game::waitPx = Game::dx * 3 + GameRow, Game::waitPy = Game::dy;
 const int Game::infoPx = dx * 2 + GameRow, Game::infoPy = 5 * dx + 4;
 Game::Game() 
 	:status(PRESTART),_points(0),PB_points(0),PB_Diff(0), _ifs("BestPoints.zhywyt",
-		fstream::in) , clearTimes(0),Diff(0),PB(false),zhywyt(18816),exZhywyt(false)
+		fstream::in) , clearTimes(0),Diff(0),PB(false),zhywyt(467856),exZhywyt(false),
+	m_diffMode(NORMAL),MusicStatus(false)
 {
 	m_map.resize(Row, vector<int>(Cow));
 	srand((unsigned int)time(NULL));
 	if (_ifs) {
-		_ifs >> PB_points >> PB_Diff;
+		int aMode;
+		_ifs >> PB_points >> PB_Diff>>aMode;
+		m_diffMode = DIFFMODE(aMode);
+		while (_ifs) {
+			int Rankdata,RankDiff;
+			_ifs >> Rankdata>>RankDiff;
+			RankList.insert(make_pair(Rankdata,DIFFMODE(RankDiff)));
+		}
 	}
 	_ifs.close();
 	for (int i = 0; i < Cow; i++) {
@@ -40,18 +48,23 @@ Game::Game()
 }
 
 void Game::Start() {
+	if (RunSound)RunSound->stop();
+	if(MusicStatus)
+	RunSound= SoundEngine->play2D(MUSIC_RUN, GL_TRUE,GL_FALSE,GL_TRUE);
 	status = RUN;
 	NextTool();
 	NextTool();
 }
-void Game::Drop() {
+bool Game::Drop() {
 	if (CanMoveDown()) {
 		m_tool.run = true;
 		m_tool.MoveDown();
+		return true;
 	}
 	else {
 		AddToMap();
 		NextTool();
+		return false;
 	}
 }
 void Game::NextTool() {
@@ -83,7 +96,7 @@ bool Game::CanMoveDown() {
 		}
 	return true;
 }
-bool Game::CangetMoveRight() {
+bool Game::CanMoveRight() {
 	for (int i = 0; i < 4; i++)
 		for (int j = 0; j < 4; j++) {
 			if (m_tool._data[i][j]) {
@@ -95,7 +108,7 @@ bool Game::CangetMoveRight() {
 		}
 	return true;
 }
-bool Game::CangetMoveLeft() {
+bool Game::CanMoveLeft() {
 	for (int i = 0; i < 4; i++)
 		for (int j = 0; j < 4; j++) {
 			if (m_tool._data[i][j]) {
@@ -109,7 +122,9 @@ bool Game::CangetMoveLeft() {
 }
 //开销比较大，直接交换了，判断变换不分开
 bool Game::Rotate() {
-	if (m_tool._type == DOT||m_tool._type==OO)return true;
+	if (m_tool._type == DOT || m_tool._type == OO) {
+		return true;
+	}
 	Tool revTool = m_tool.Rotate();
 	for(int i=0;i<4;i++)
 		for (int j = 0; j < 4; j++) 
@@ -118,19 +133,34 @@ bool Game::Rotate() {
 	//如果没有冲突，直接交换revTool和m_tool，这里和移动赋值的理念有点相似，
 	//因为我的m_tool已经不需要了，直接让revTool来进行析构。
 	swap(m_tool, revTool);
+	if(MusicStatus)
+	SoundEngine->play2D(MUSIC_ROTATE, GL_FALSE);
 	return true;
 }
 void Game::GameOver() {
-	if (_points > PB_points) {
-		PB = true;
-		_ofs = ofstream("BestPoints.zhywyt", fstream::out);
-		if (!_ofs) {
-			cout << "Open file False in output" << endl;
-			exit(-1);
-		}
-		_ofs << _points <<" " << PB_Diff << endl;
-		PB_points = _points;
+	if (RunSound) {
+		RunSound->stop();
 	}
+	if (MusicStatus) {
+		SoundEngine->play2D(MUSIC_GAMEOVER, GL_FALSE);
+	}
+	_ofs = ofstream("BestPoints.zhywyt", fstream::out);
+	if (!_ofs) {
+		cout << "Open file False in output" << endl;
+		exit(-1);
+	}
+	if (_points > PB_points) {
+		PB_points = _points;
+		PB_Diff = Diff;
+	}
+	PB = true;
+	_ofs << PB_points << " " << PB_Diff <<" "<<m_diffMode << endl;
+	RankList.insert(make_pair(_points,m_diffMode));
+	auto ibeg = RankList.begin();
+	for (int i = 0; i < 12 && ibeg != RankList.end(); ibeg++) {
+		_ofs << ibeg->first<<" "<<ibeg->second << " ";
+	}
+	_ofs.close();
 	if (_points > zhywyt) {
 		exZhywyt = true;
 	}
@@ -158,6 +188,7 @@ void Game::AddToMap() {
 		}
 		//可以消除第 i 行
 		if (flag) {
+			SoundEngine->play2D(MUSIC_BREAK_2, GL_FALSE);
 			//把 i 行上面的所有行向下移动
 			for (int k = i; k > 0; k--) {
 				for (int j = dx; j < GameRow; j++) {
@@ -174,6 +205,7 @@ void Game::AddToMap() {
 				PB = true;
 				PB_points = _points;
 			}
+			clearTimes++;
 		}
 		//设置难度
 		Diff = clearTimes / 3;
@@ -193,6 +225,20 @@ GameMode Game::getStatus() const {
 void Game::ChangeStatus(GameMode la) {
 	status = la;
 }
+void Game::setDiffMode(DIFFMODE mode) {
+	m_diffMode = mode;
+}
+DIFFMODE Game::getDiffMode() {
+	return m_diffMode;
+}
+bool Game::getMusicStatus() {
+	return MusicStatus;
+}
+//Change The Music status
+void Game::setMusicStatus(bool mode) {
+	MusicStatus = mode;
+}
+
 
 //和GameOver不同，前者只保存最高分哦~
 bool Game::Save(string FileName) {
@@ -201,7 +247,7 @@ bool Game::Save(string FileName) {
 		//按照数据顺序来
 		ofs << status << " " << clearTimes << " "
 			<< zhywyt << " " << _points << " "
-			<< PB_points << " " << Diff << " "
+			<< PB_points << " " << Diff << " "<<m_diffMode<<" "
 			<< PB_Diff << " " << PB << endl;
 		ofs << m_tool._type << " " << m_next._type << endl;
 		for (int i = 0; i < Row; i++) {
@@ -216,10 +262,10 @@ bool Game::Save(string FileName) {
 bool Game::Load(string FileName) {
 	ifstream ifs(FileName, fstream::in);
 	if (ifs) {
-		int Status, m_tool_Type, m_next_Type;
+		int Status, m_tool_Type, m_next_Type,m_Diff_Mode;
 		ifs >> Status >> clearTimes
 			>> zhywyt >> _points
-			>> PB_points >> Diff
+			>> PB_points >> Diff>>m_Diff_Mode
 			>> PB_Diff >> PB
 			>> m_tool_Type >> m_next_Type;
 		for (int i = 0; i < Row; i++)
@@ -228,6 +274,7 @@ bool Game::Load(string FileName) {
 		status = GameMode(Status);
 		m_tool = Tool(rePx,rePy,ToolType(m_tool_Type));
 		m_next = Tool(waitPx, waitPy, ToolType(m_next_Type));
+		m_diffMode = DIFFMODE(m_Diff_Mode);
 		return true;
 	}
 	return false;

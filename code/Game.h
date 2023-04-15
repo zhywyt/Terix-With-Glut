@@ -5,13 +5,21 @@
 #include <windows.h>
 #include <iostream>
 #include<string>
+#include <map>
 #include <vector>
 #include <time.h>
 #include <fstream>
-
+#include <irr/irrKlang.h>
+#include "Reasource.h"
+using namespace irrklang;
 using namespace std;
+
+extern ISoundEngine* SoundEngine;
+extern ISound* RunSound;
+
 const int mapScre = 1;							//场景缩放
 const int  NodeSize = 20;						//方形边长
+const int LineSize = 1;
 const int Cow = 30 * mapScre;				//窗口行数  y
 const int Row = 24 * mapScre;				//列数  x
 const int GameCow = 30 * mapScre;		//游戏场景行数
@@ -23,6 +31,7 @@ typedef enum {
 	PRESTART,		//游戏开始前
 	RUN,				//游戏进行时
 	GAMEOVER,		//游戏结束
+	GAMERANKLIST,	//查看游戏排行
 	GAMEWIN,		//游戏胜利
 }GameMode;
 typedef enum {
@@ -35,6 +44,15 @@ typedef enum {
 	LOADAUTOSAVE,
 	CHECKBEST
 }SaveLoad;
+typedef enum {
+	EASY=CHECKBEST+1,
+	NORMAL,
+	HARD
+}DIFFMODE;
+typedef enum {
+	MUSICON=HARD+1,
+	MUSICOFF
+}MUSICMODE;
 extern void Input(int data, int x, int y);
 extern void onDisplay();
 extern void Input(unsigned char nchar, int x, int y);
@@ -128,10 +146,15 @@ public:
 
 	Game();
 	void Start();
-	void Drop();
+	bool Drop();
 	int getDiff()const;
 	GameMode getStatus()const;
 	void ChangeStatus(GameMode);
+	void setDiffMode(DIFFMODE);
+	DIFFMODE getDiffMode();
+	bool getMusicStatus();
+	//Change The Music status
+	void setMusicStatus(bool);
 
 	friend void Input(int data, int x, int y);
 	friend void onDisplay();
@@ -148,7 +171,9 @@ private:
 	unsigned int _points;
 	unsigned int PB_points;
 	unsigned int Diff;
-	
+	map<int,DIFFMODE> RankList;
+	DIFFMODE m_diffMode;
+
 	unsigned int PB_Diff;
 	bool PB;
 	bool exZhywyt;
@@ -159,17 +184,19 @@ private:
 	//文件流
 	ifstream _ifs;
 	ofstream _ofs;
+
+	bool MusicStatus;
 //私有函数-------------------------
 void NextTool();
+//status==Prestart
 void reset();
 bool CanMoveDown();
-bool CangetMoveRight();
-bool CangetMoveLeft();
+bool CanMoveRight();
+bool CanMoveLeft();
 bool Rotate();
 void GameOver();
 void AddToMap();
 bool Save(string FileName);
 bool Load(string FileName);
-
 };
 #endif

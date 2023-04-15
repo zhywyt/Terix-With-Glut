@@ -5,8 +5,14 @@
 #include <stdlib.h>
 #include "Game.h"
 #include "Reasource.h"
+#include <math.h>
+using namespace irrklang;
+
 //关闭控制台
 #pragma comment(linker, "/subsystem:\"windows\" /entry:\"mainCRTStartup\"")
+ISoundEngine* SoundEngine = createIrrKlangDevice();
+ISound* RunSound=nullptr;
+
 
 Game myGame;
 void onReshape(int w, int h)
@@ -32,8 +38,9 @@ void onDisplay()
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	//Draw Normal Info
-	if (myGame.status!=PRESTART&&myGame.status!=GAMEOVER&&myGame.status!=GAMEWIN) {
+	if (myGame.status == RUN || myGame.status == STOP) {
 		//Draw BackGroud
+		///Draw Dots
 		for (int i = 0; i < Row; i++) {
 			bool flag = true;
 			for (int j = 0; j < Cow; j++) {
@@ -123,25 +130,69 @@ void onDisplay()
 					glRectd((myGame.m_next._x + i) * NodeSize, (myGame.m_next._y + j) * NodeSize, (myGame.m_next._x + i + 1) * NodeSize, (myGame.m_next._y + j + 1) * NodeSize);
 			}
 		}
+		///Drw Mesh
+		glPointSize(LineSize);
+		glColor3f(LINE_COLOR);
+		for (int i = Game::dx; i <= GameRow; i++) {
+			for (int j = 0; j <= GameCow * NodeSize; j += LineSize) {
+				glBegin(GL_POINTS);
+				glVertex2d(i * NodeSize, j);
+				glEnd();
+			}
+		}
+		for (int i = Game::dx; i <= GameCow; i++) {
+			for (int j = Game::dx * NodeSize; j <= (GameRow + Game::dx) * NodeSize; j += LineSize) {
+				glBegin(GL_POINTS);
+				glVertex2d(j, i * NodeSize);
+				glEnd();
+			}
+		}
+
 		//Draw Info
-		const char points[20] = "Points:", PBpoints[20] = "PB:", Diff[20] = "Rank:",zhywyt[]="zhywyt:";
-		char points_num[20], PBpoints_num[20], Diff_num[20],zhywyt_num[20];
+		const char points[20] = "Points:", PBpoints[20] = "PB:", Diff[20] = "Rank:",zhywyt[]="zhywyt:",DiffMode[20]="Diff Mode:";
+		char points_num[20], PBpoints_num[20], Diff_num[20],zhywyt_num[20],DiffMode_num[20];
 		sprintf(points_num, "%d", myGame._points);
 		sprintf(PBpoints_num, "%d", myGame.PB_points);
 		sprintf(Diff_num, "%d", myGame.Diff);
 		sprintf(zhywyt_num, "%d", myGame.zhywyt);
-
-		const char* strinfo[] = { points,PBpoints,Diff,zhywyt };
-		char* str_num[] = { points_num,PBpoints_num,Diff_num ,zhywyt_num};
+		string str;
+		switch (myGame.getDiffMode()) {
+		case EASY:
+			str = "Easy";
+			break;
+		case NORMAL:
+			str = "Normal";
+			break;
+		case HARD:
+			str = "Hard";
+			break;
+		default: {
+				str = " ";
+				break;
+			}
+		}
+		sprintf(DiffMode_num, "%s",str.c_str());
+		const char* strinfo[] = { points,PBpoints,DiffMode,Diff,zhywyt};
+		char* str_num[] = { points_num,PBpoints_num,Diff_num ,DiffMode_num,zhywyt_num };
 		if (!myGame.PB)
 			glColor3f(TEXT_COLOR);
 		else 
 			glColor3f(PB_TEXT_COLOR);
-		for (int i = 0; i < 4; i++) {
-			if (i == 3)glColor3f(PB_TEXT_COLOR);
-			glRasterPos2d(Game::infoPx * NodeSize, (Game::infoPy + 5 * i) * NodeSize);
+		for (int i = 0; i < 5; i++) {
+			if (i == 4)glColor3f(PB_TEXT_COLOR);
+			if (i == 3) {
+				switch (myGame.getDiffMode()) {
+				case NORMAL:
+					glColor3f(RGB(0,0,255));
+					break;
+				case HARD:
+					glColor3f(RGB(255, 0, 0));
+					break;
+				}
+			}
+			glRasterPos2d(Game::infoPx * NodeSize, (Game::infoPy + 4 * i) * NodeSize);
 			for (int j = 0; strinfo[i][j] != '\0'; j++)glutBitmapCharacter(INFO_FONT, strinfo[i][j]);
-			glRasterPos2d(Game::infoPx * NodeSize, (Game::infoPy + 5 * i + 2) * NodeSize);
+			glRasterPos2d(Game::infoPx * NodeSize, (Game::infoPy + 4 * i + 2) * NodeSize);
 			for (int j = 0; str_num[i][j] != '\0'; j++)glutBitmapCharacter(INFO_FONT, str_num[i][j]);
 		}
 		//Draw Stop Info
@@ -197,6 +248,42 @@ void onDisplay()
 					glutBitmapCharacter(INFO_FONT, str[i][j]);
 			}
 		}
+		else if (myGame.status == GAMERANKLIST) {
+			const unsigned char YourInfo[] = "Your Rank List";
+			int length = glutBitmapLength(INFO_FONT, YourInfo) / 14;
+			char YourScore[12][15];
+			int YourScoreLength[30];
+			auto ibeg = myGame.RankList.rbegin();
+			int len;
+			for (len = 0; len < 12 && ibeg != myGame.RankList.rend(); len++, ibeg++) {
+				string str;;
+				switch (ibeg->second) {
+				case EASY:
+					str = "Easy";
+					break;
+				case NORMAL:
+					str = "Normal";
+					break;
+				case HARD:
+					str = "Hard";
+					break;
+				}
+				sprintf(YourScore[len], "%d    %s", ibeg->first,str.c_str());
+				YourScoreLength[len] = length * strlen(YourScore[len]);
+			}
+			//Draw Title
+			glRasterPos2d((Row * NodeSize - length * 14) / 2, Game::dx * NodeSize);
+			for (int i = 0; YourInfo[i] != '\0'; i++) {
+				glutBitmapCharacter(INFO_FONT, YourInfo[i]);
+			}
+			//Draw Number
+			for (int i = 0; i < len; i++) {
+				glRasterPos2d((Row * NodeSize - YourScoreLength[i]) / 2, (i * 2 + 3 * Game::dx) * NodeSize);
+				for (int j = 0; YourScore[i][j] != '\0'; j++) {
+					glutBitmapCharacter(INFO_FONT, YourScore[i][j]);
+				}
+			}
+		}
 		else {
 			const char helpInfo1[] = "Your Can Press the Space to stop Game.";
 			const char helpInfo2[] = "And you can click the right butttom to-";
@@ -205,9 +292,38 @@ void onDisplay()
 			const char helpInfo31[] = "-not close the window";
 			const char PrestartInfo[30] = "Press Space to start.";
 			const char LuckInfo[] = "Have Good Time!";
-			const char* str[] = {PrestartInfo,helpInfo31,helpInfo3,helpInfo21,helpInfo2,helpInfo1 };
+			char DiffMode_num[20];
+			string str1;
+			switch (myGame.getDiffMode()) {
+			case EASY:
+				str1 = "Easy";
+				break;
+			case NORMAL:
+				str1 = "Normal";
+				break;
+			case HARD:
+				str1 = "Hard";
+				break;
+			default: {
+				str1 = " ";
+				break;
+			}
+			}
+			sprintf(DiffMode_num, "DiffMode : % s" ,str1.c_str());
+			const char* DiffMode = DiffMode_num;
+			const char* str[] = { DiffMode,PrestartInfo,helpInfo31,helpInfo3,helpInfo21,helpInfo2,helpInfo1 };
 			glColor3f(TEXT_COLOR);
-			for (int j = 5; j >=0; j--) {
+			for (int j = 6; j >=0; j--) {
+				if (j == 0) {
+					switch (myGame.getDiffMode()) {
+					case NORMAL:
+						glColor3f(RGB(0, 0, 255));
+						break;
+					case HARD:
+						glColor3f(RGB(255, 0, 0));
+						break;
+					}
+				}
 			glRasterPos2d((Game::dx)*NodeSize, ((GameCow + 9 * Game::dx) / 2-j*2 )* NodeSize);
 				for (int i = 0; str[j][i] != '\0'; i++)
 					glutBitmapCharacter(INFO_FONT, str[j][i]);
@@ -226,7 +342,16 @@ void Input(unsigned char nchar, int x, int y) {
 	if (nchar == GLUT_KEY_ESCAPE) {
 		//退出前保存数据
 		myGame.GameOver();
-		myGame.Save("AutoSave.zhywyt");
+		int status, cleartimes;
+		ifstream ifs("AutoSace.zhywyt", ifstream::in);
+		if (ifs) {
+			ifs >> status >> cleartimes;
+			if (cleartimes < myGame.clearTimes) {
+				myGame.Save("AutoSave.zhywyt"); 
+			}
+			ifs.close();
+		}
+		SoundEngine->drop();
 		exit(0);
 	}
 	//全部转化为大写进行处理
@@ -238,18 +363,32 @@ void Input( int nchar, int x, int y){
 	//处理游戏时的输入
 	if (myGame.status == RUN) {	
 		if (nchar == GLUT_KEY_UP || nchar == GLFW_KEY_W) {
-			myGame.Rotate();
+			if (myGame.Rotate()) {
+				if (myGame.getMusicStatus())
+					SoundEngine->play2D(MUSIC_ROTATE, GL_FALSE);
+			}
 		}
 		else if (nchar == GLFW_KEY_S || nchar == GLUT_KEY_DOWN) {
-			myGame.Drop();
+			if (myGame.Drop()) {
+				//为了让自动下坠的时候不发出声音
+				if (myGame.getMusicStatus())
+					SoundEngine->play2D(MUSIC_DROP, GL_FALSE);
+			}
 		}
 		else if (nchar == GLFW_KEY_A || nchar == GLUT_KEY_LEFT) {
-			if (myGame.CangetMoveLeft())
+			if (myGame.CanMoveLeft())
+			{
 				myGame.m_tool.MoveLeft();
+				if (myGame.getMusicStatus())
+				SoundEngine->play2D(MUSIC_MOVE, GL_FALSE);
+			}
 		}
 		else if (nchar == GLFW_KEY_D || nchar == GLUT_KEY_RIGHT) {
-			if (myGame.CangetMoveRight())
+			if (myGame.CanMoveRight()) {
 				myGame.m_tool.MoveRight();
+				if (myGame.getMusicStatus())
+				SoundEngine->play2D(MUSIC_MOVE, GL_FALSE);
+			}
 		}
 		else if (nchar == GLFW_KEY_SPACE) {
 			if (myGame.status == GAMEOVER) {
@@ -258,6 +397,9 @@ void Input( int nchar, int x, int y){
 			}
 			else if (myGame.status == RUN) {
 				myGame.status = STOP;
+				if (RunSound) {
+					RunSound->setIsPaused(GL_TRUE);
+				}
 			}
 		}
 	}	
@@ -265,6 +407,8 @@ void Input( int nchar, int x, int y){
 	else if (myGame.status == STOP ) {
 		if (nchar == GLFW_KEY_SPACE) {
 			myGame.status = RUN;
+			if(RunSound)
+			RunSound->setIsPaused(GL_FALSE);
 		}
 	}
 	//处理游戏开始前的输入
@@ -280,14 +424,35 @@ void Input( int nchar, int x, int y){
 	}
 	else if (myGame.status == GAMEWIN) {
 		if (nchar)exit(0);
+
+	}
+	else if (myGame.status == GAMERANKLIST) {
+		if (nchar == GLFW_KEY_SPACE) {
+			myGame.ChangeStatus(PRESTART);
+		}
 	}
 }
 void Ontime(int timeid) {
 	timeid++;
 	timeid %= 1000;
+	int Deltatime;
 	if(myGame.getStatus() == RUN)
 		myGame.Drop();
-	int Deltatime = 150 - 3 * myGame.getDiff();
+	switch (myGame.getDiffMode()) {
+	case EASY: {
+		Deltatime = 200 - static_cast<int>(4.5 *pow(myGame.getDiff(),2/3.0));
+		break;
+	}
+	case NORMAL: {
+		Deltatime = 150 - static_cast<int>(4.5 * pow(myGame.getDiff(), 2 / 3.0));
+		break;
+	}
+	case HARD: {
+		Deltatime = 150 - 3 * myGame.getDiff();
+	}
+	default:
+		Deltatime = 150;
+	}
 	//It is imposible!!!
 	if (Deltatime <= 50)myGame.ChangeStatus(GAMEWIN) ;
 	onDisplay();
@@ -295,18 +460,29 @@ void Ontime(int timeid) {
 }
 void processMenuEvents(int option) {
 	switch (option) {
-	//case CHECKBEST:
-	//	//以后再做吧。
-	//	break;
+	case CHECKBEST:
+		//Version2
+		myGame.ChangeStatus(GAMERANKLIST);
+		break;
 	case RUN:
 		if (myGame.status == PRESTART)myGame.Start();
 		myGame.status = RUN;
 		break;
-	case GAMEOVER:
+	case GAMEOVER: {
 		myGame.GameOver();
-		myGame.Save("AutoSave.zhywyt");
+		int status, cleartimes;
+		ifstream ifs("AutoSace.zhywyt", ifstream::in);
+		if (ifs) {
+			ifs >> status >> cleartimes;
+			if (cleartimes < myGame.clearTimes) {
+				myGame.Save("AutoSave.zhywyt");
+			}
+			ifs.close();
+		}
+		SoundEngine->drop();
 		exit(0);
 		break;
+	}
 	case PRESTART:
 		myGame.status = PRESTART;
 		myGame.GameOver();
@@ -316,6 +492,20 @@ void processMenuEvents(int option) {
 	case STOP:
 		if(myGame.status!=PRESTART)
 		myGame.status = STOP;
+		break;
+	case MUSICON:
+		myGame.setMusicStatus(GL_TRUE);
+		if (RunSound) {
+			RunSound->stop();
+		}
+		RunSound = SoundEngine->play2D(MUSIC_RUN, GL_TRUE, GL_FALSE, GL_TRUE);
+		if (myGame.getStatus() == STOP&&RunSound)RunSound->setIsPaused(GL_TRUE);
+		break;
+	case MUSICOFF:
+		myGame.setMusicStatus(GL_FALSE);
+		if (RunSound) {
+			RunSound->drop();
+		}
 		break;
 	}
 	if (option >= SAVE1 && option <= SAVE3) {
@@ -344,16 +534,32 @@ void processMenuEvents(int option) {
 		if(myGame.Load("AutoSave.zhywyt"))
 			myGame.ChangeStatus(STOP);
 	}
+	else if (option >= EASY && option <= HARD) {
+		if(myGame.getStatus()!=RUN&&myGame.getStatus()!=STOP)
+		myGame.setDiffMode(DIFFMODE(option));
+	}
 }
 void createGLUTMenus() {
 	//菜单ID
-	int menu,submenu, Savemenu, Loadmenu;
+	int menu,Optionmenu, Savemenu, Loadmenu,Diffmenu,Musicmenu;
 	//设置回调函数processMenuEvents()，获取与之对于的菜单ID
-	submenu = glutCreateMenu(processMenuEvents);
+
+	//Opetion Sub Menu
+	Musicmenu = glutCreateMenu(processMenuEvents);
+	glutAddMenuEntry("On", MUSICON);
+	glutAddMenuEntry("Off", MUSICOFF);
+	Diffmenu = glutCreateMenu(processMenuEvents);
+	glutAddMenuEntry("Easy", EASY);
+	glutAddMenuEntry("Normal", NORMAL);
+	glutAddMenuEntry("Hard!", HARD);
+
+	Optionmenu = glutCreateMenu(processMenuEvents);
 	glutAddMenuEntry("Start", RUN);
 	glutAddMenuEntry("Reset", PRESTART);
-	//以后再做
-	//glutAddMenuEntry("Check My Best", CHECKBEST);
+	glutAddSubMenu("setDiff",Diffmenu);
+	glutAddSubMenu("Music", Musicmenu);
+	glutAddMenuEntry("RankList", CHECKBEST);
+
 	Savemenu = glutCreateMenu(processMenuEvents);
 	glutAddMenuEntry("Save1", SAVE1);
 	glutAddMenuEntry("Save2", SAVE2);
@@ -366,7 +572,7 @@ void createGLUTMenus() {
 	menu = glutCreateMenu(processMenuEvents);
 	//设置父菜单
 	glutAddMenuEntry("Stop", STOP);
-	glutAddSubMenu("Option", submenu);
+	glutAddSubMenu("Option", Optionmenu);
 	glutAddSubMenu("Save", Savemenu);
 	glutAddSubMenu("LoadSave", Loadmenu);
 	glutAddMenuEntry("Exit", GAMEOVER);
@@ -385,6 +591,8 @@ int main(int argc, char* argv[])
 	glutInitWindowPosition(100, 100);
 	// 设置窗口标题
 	glutCreateWindow("Terix");
+
+
 	//设置输入回调函数
 	glutKeyboardFunc(Input);
 	glutSpecialFunc(Input);
@@ -398,6 +606,7 @@ int main(int argc, char* argv[])
 	createGLUTMenus();
 	// 进入 glut 事件循环
 	glutMainLoop();
+	SoundEngine->drop();
 	return 0;
 }
 
